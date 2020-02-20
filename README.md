@@ -1,7 +1,9 @@
 # Introduction
-A simple PostgreSQL generator. It reads YAML definition file, outputs DDL.
+A lightweight PostgreSQL generator. It reads YAML definition file, outputs DDL.
 
 # How to use
+
+# Naming stype
 
 # TODO
 - 重构enum类型
