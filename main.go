@@ -13,19 +13,18 @@ import (
 	"github.com/go-yaml/yaml"
 )
 
-var model string
+var model = flag.String("model", "", "model file")
 
 func main() {
-	flag.StringVar(&model, "model", "", "model file")
 	flag.Parse()
 
-	if model = strings.TrimSpace(model); model == "" {
+	if *model == "" {
 		return
 	}
 
-	exitIfErr(checkFile(model))
+	exitIfErr(checkFile(*model))
 
-	raw, err := readFile(model)
+	raw, err := readFile(*model)
 	exitIfErr(err)
 
 	// parse to get structured data
