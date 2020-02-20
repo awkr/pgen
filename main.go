@@ -158,12 +158,10 @@ func parseField(in interface{}) (*Field, error) {
 		case "nullable":
 			f.Nullable = item.Value.(bool)
 		case "pk":
-			if t != DataTypeInteger && t != DataTypeBigint {
-				return nil, fmt.Errorf("%s: primary key must be integer or bigint", f.Name)
+			if t != DataTypeInteger && t != DataTypeBigint && t != DataTypeSerial {
+				return nil, fmt.Errorf("%s: primary key must be integer, bigint, serial", f.Name)
 			}
 			f.PK = item.Value.(bool)
-		case "serial":
-			f.Serial = item.Value.(bool)
 		default:
 			return nil, fmt.Errorf("%s: invalid attribute: %s", f.Name, key)
 		}
@@ -225,10 +223,6 @@ func render(data []*Table, w io.Writer) error {
 
 			if !f.Nullable && !f.PK {
 				g.P(" not null")
-			}
-
-			if f.Serial {
-				g.P(" serial")
 			}
 
 			if f.PK {
@@ -318,7 +312,6 @@ type Field struct {
 	Default  interface{}
 	Size     int // only 'varchar' has size attribute
 	PK       bool
-	Serial   bool
 }
 
 func castDataType(t string) (string, error) {
@@ -329,7 +322,7 @@ func castDataType(t string) (string, error) {
 		return DataTypeBigint, nil
 	case "str":
 		return DataTypeVarchar, nil
-	case "text":
+	case "text", "serial":
 		return t, nil
 	case "bool":
 		return DataTypeBool, nil
@@ -348,4 +341,5 @@ const (
 	DataTypeVarchar = "varchar"
 	DataTypeBool    = "bool"
 	DataTypeTime    = "time"
+	DataTypeSerial  = "serial"
 )
