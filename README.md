@@ -1,5 +1,9 @@
 # Introduction
 A simple PostgreSQL generator. It reads YAML definition file, outputs DDL.
 
+# How to use
+
 # TODO
-Some validation(please see TODO in code comments).
+- 重构enum类型
+- 检查索引字段存不存在
+- 校验命名规范
