@@ -29,10 +29,13 @@ func main() {
 	exitIfErr(err)
 
 	// parse to get structured data
-	data, err := parse(raw)
-	exitIfErr(err)
+	p := parser{
+		Enums:  []*Enum{},
+		Tables: []*Table{},
+	}
+	exitIfErr(p.parse(raw))
 
-	exitIfErr(render(data, os.Stdout))
+	exitIfErr(render(p.Tables, p.Enums, os.Stdout))
 }
 
 func exitIfErr(e error) {
@@ -69,54 +72,128 @@ func readFile(path string) (yaml.MapSlice, error) {
 	return raw, nil
 }
 
-func parse(raw yaml.MapSlice) ([]*Table, error) {
-	data := make([]*Table, 0, len(raw))
-
-	for _, s := range raw {
-		attrs := s.Value.(yaml.MapSlice)
-
-		t := Table{
-			Name: s.Key.(string),
-		}
-
-		for _, attr := range attrs {
-			switch n := attr.Key.(string); n {
-			case "db":
-				t.DB = attr.Value.(string)
-			case "comment":
-				t.Comment = attr.Value.(string)
-			case "fields":
-				if attr.Value == nil {
-					continue
-				}
-
-				for _, field := range attr.Value.([]interface{}) {
-					f, err := parseField(field)
-					if err != nil {
-						return nil, err
-					}
-
-					t.Fields = append(t.Fields, f)
-				}
-			case "uniques":
-				t.Uniques = parseIndexes(attr.Value)
-			case "indexes":
-				t.Indexes = parseIndexes(attr.Value)
-			}
-		}
-
-		// validation
-		if t.DB == "" {
-			return nil, fmt.Errorf("%s: db should be provided", t.Name)
-		}
-
-		data = append(data, &t)
-	}
-
-	return data, nil
+type parser struct {
+	Enums  []*Enum
+	Tables []*Table
 }
 
-func parseIndexes(in interface{}) []Index {
+func (p *parser) parse(raw yaml.MapSlice) error {
+	parse := func(raw yaml.MapSlice, f func(t string, s yaml.MapItem) error) error {
+		for _, s := range raw {
+			attrs := s.Value.(yaml.MapSlice)
+			if len(attrs) == 0 {
+				continue
+			}
+
+			if attrs[0].Key.(string) != "type" {
+				return fmt.Errorf("%s: the first attribute must be 'type'", s.Key.(string))
+			}
+
+			if err := f(attrs[0].Value.(string), s); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	// parse enum
+	if err := parse(raw, func(t string, s yaml.MapItem) error {
+		if t != "enum" {
+			return nil
+		}
+
+		e, err := p.parseEnum(s)
+		if err != nil {
+			return err
+		}
+		p.Enums = append(p.Enums, e)
+
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	// after all other types parsed, parse table
+	if err := parse(raw, func(t string, s yaml.MapItem) error {
+		if t != "table" {
+			return nil
+		}
+
+		table, err := p.parseTable(s)
+		if err != nil {
+			return err
+		}
+		p.Tables = append(p.Tables, table)
+
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (p *parser) parseEnum(s yaml.MapItem) (*Enum, error) {
+	e := Enum{
+		Name:   s.Key.(string),
+		Values: []string{},
+	}
+	for _, attr := range s.Value.(yaml.MapSlice) {
+		switch n := attr.Key.(string); n {
+		case "comment":
+			e.Comment = attr.Value.(string)
+		case "value":
+			if attr.Value == nil {
+				return nil, fmt.Errorf("enum %s should have at least one value", e.Name)
+			}
+
+			for _, val := range attr.Value.([]interface{}) {
+				e.Values = append(e.Values, val.(string))
+			}
+		}
+	}
+	return &e, nil
+}
+
+func (p *parser) parseTable(s yaml.MapItem) (*Table, error) {
+	t := Table{
+		Name: s.Key.(string),
+	}
+	for _, attr := range s.Value.(yaml.MapSlice) {
+		switch n := attr.Key.(string); n {
+		case "db":
+			t.DB = attr.Value.(string)
+		case "comment":
+			t.Comment = attr.Value.(string)
+		case "fields":
+			if attr.Value == nil {
+				continue
+			}
+
+			for _, field := range attr.Value.([]interface{}) {
+				f, err := p.parseField(field)
+				if err != nil {
+					return nil, err
+				}
+
+				t.Fields = append(t.Fields, f)
+			}
+		case "uniques":
+			t.Uniques = p.parseIndexes(attr.Value)
+		case "indexes":
+			t.Indexes = p.parseIndexes(attr.Value)
+		}
+	}
+
+	// validation
+	if t.DB == "" {
+		return nil, fmt.Errorf("%s: db should be provided", t.Name)
+	}
+
+	return &t, nil
+}
+
+func (p *parser) parseIndexes(in interface{}) []Index {
 	if in == nil {
 		return nil
 	}
@@ -132,33 +209,45 @@ func parseIndexes(in interface{}) []Index {
 	return indexes
 }
 
-func parseField(in interface{}) (*Field, error) {
+func (p *parser) parseField(in interface{}) (*Field, error) {
 	m := in.(yaml.MapSlice)
 
-	col := m[0]
-
-	t, err := castDataType(col.Value.(string))
+	t, err := p.parseDataType(m[0].Value.(string))
 	if err != nil {
 		return nil, err
 	}
 
 	f := Field{
-		Name: col.Key.(string),
+		Name: m[0].Key.(string),
 		Type: t,
 	}
 
 	for _, item := range m[1:] {
 		switch key := item.Key.(string); key {
 		case "default":
+			switch f.Type.T {
+			case DataTypeVarchar, DataTypeInteger, DataTypeBigint, DataTypeBool:
+			default:
+				if !f.Type.IsEnum {
+					return nil, fmt.Errorf("%s: data type '%s' can not have 'default' attribute", f.Name, f.Type.T)
+				}
+			}
 			f.Default = item.Value
 		case "size":
+			switch f.Type.T {
+			case DataTypeVarchar:
+			default:
+				return nil, fmt.Errorf("%s: data type '%s' can not have 'size' attribute", f.Name, f.Type.T)
+			}
 			f.Size = item.Value.(int)
 		case "comment":
 			f.Comment = item.Value.(string)
 		case "nullable":
 			f.Nullable = item.Value.(bool)
 		case "pk":
-			if t != DataTypeInteger && t != DataTypeBigint && t != DataTypeSerial {
+			switch f.Type.T {
+			case DataTypeInteger, DataTypeBigint, DataTypeSerial:
+			default:
 				return nil, fmt.Errorf("%s: primary key must be integer, bigint, serial", f.Name)
 			}
 			f.PK = item.Value.(bool)
@@ -167,22 +256,88 @@ func parseField(in interface{}) (*Field, error) {
 		}
 	}
 
-	// do some validation
-	switch f.Type {
+	// some validation
+	switch f.Type.T {
 	case DataTypeVarchar:
 		if f.Size == 0 {
 			return nil, fmt.Errorf("%s should have size. if size is not a consideration, 'text' should be used", f.Name)
 		}
 	}
 
+	if f.PK {
+		if f.Nullable {
+			return nil, fmt.Errorf("%s: primary key can not be nullable", f.Name)
+		}
+	}
+
 	return &f, nil
 }
 
-func render(data []*Table, w io.Writer) error {
+func (p *parser) parseDataType(t string) (*Type, error) {
+	switch t {
+	case "i32":
+		return &Type{T: DataTypeInteger}, nil
+	case "i64":
+		return &Type{T: DataTypeBigint}, nil
+	case "str":
+		return &Type{T: DataTypeVarchar}, nil
+	case "bool":
+		return &Type{T: DataTypeBool}, nil
+	case "t":
+		return &Type{T: DataTypeTime}, nil
+	case "tsz":
+		return &Type{T: DataTypeTimestamptz}, nil
+	case "text", "serial":
+		return &Type{T: t}, nil
+	default:
+		for _, e := range p.Enums {
+			if t == e.Name {
+				return &Type{
+					T:      t,
+					IsEnum: true,
+				}, nil
+			}
+		}
+
+		return nil, fmt.Errorf("invalid data type: %s", t)
+	}
+}
+
+func render(tables []*Table, enums []*Enum, w io.Writer) error {
 	g := &gen{}
 	g.P("-- Auto generated by pgen, DO NOT MODIFY.").Ln().Ln()
 
-	for i, t := range data {
+	g.P("-- Enums").Ln().Ln()
+
+	for i, e := range enums {
+		if len(e.Values) == 0 {
+			continue
+		}
+
+		if i > 0 {
+			g.Ln()
+		}
+
+		g.P("create type", e.Name, "as enum(")
+
+		for j, val := range e.Values {
+			if j > 0 {
+				g.P(", ")
+			}
+			g.Pf("'%s'", val)
+		}
+
+		g.P(");").Ln()
+
+		// comment
+		if e.Comment != "" {
+			g.Pf("comment on type %s is '%s';", e.Name, e.Comment).Ln()
+		}
+	}
+
+	g.Ln().P("-- Tables").Ln().Ln()
+
+	for i, t := range tables {
 		if len(t.Fields) == 0 {
 			continue
 		}
@@ -195,21 +350,19 @@ func render(data []*Table, w io.Writer) error {
 		g.P("create table if not exists", t.Name, "(").Ln()
 
 		for j, f := range t.Fields {
-			g.P(" ", f.Name, f.Type)
+			g.P(" ", f.Name, f.Type.T)
 
 			// size
 			if f.Size > 0 {
-				switch f.Type {
+				switch f.Type.T {
 				case DataTypeVarchar:
 					g.Pf("(%d)", f.Size)
-				default:
-					return fmt.Errorf("%s: data type '%s' can not have 'size' attribute", f.Name, f.Type)
 				}
 			}
 
 			// default
 			if f.Default != nil {
-				switch f.Type {
+				switch f.Type.T {
 				case DataTypeVarchar:
 					g.Pf(" default '%s'", f.Default.(string))
 				case DataTypeInteger, DataTypeBigint:
@@ -217,7 +370,9 @@ func render(data []*Table, w io.Writer) error {
 				case DataTypeBool:
 					g.Pf(" default %t", f.Default.(bool))
 				default:
-					return fmt.Errorf("%s: data type '%s' can not have 'default' attribute", f.Name, f.Type)
+					if f.Type.IsEnum {
+						g.Pf(" default '%s'", f.Default.(string))
+					}
 				}
 			}
 
@@ -226,9 +381,6 @@ func render(data []*Table, w io.Writer) error {
 			}
 
 			if f.PK {
-				if f.Nullable {
-					return fmt.Errorf("%s: primary key can not nullable", f.Name)
-				}
 				g.P(" primary key")
 			}
 
@@ -293,6 +445,12 @@ func (g *gen) Write(w io.Writer) error {
 	return err
 }
 
+type Enum struct {
+	Name    string
+	Comment string
+	Values  []string
+}
+
 type Table struct {
 	DB      string
 	Name    string
@@ -306,7 +464,7 @@ type Index []string
 
 type Field struct {
 	Name     string
-	Type     string
+	Type     *Type
 	Comment  string
 	Nullable bool
 	Default  interface{}
@@ -314,32 +472,17 @@ type Field struct {
 	PK       bool
 }
 
-func castDataType(t string) (string, error) {
-	switch t {
-	case "i32":
-		return DataTypeInteger, nil
-	case "i64":
-		return DataTypeBigint, nil
-	case "str":
-		return DataTypeVarchar, nil
-	case "text", "serial":
-		return t, nil
-	case "bool":
-		return DataTypeBool, nil
-	case "t":
-		return DataTypeTime, nil
-	case "tsz":
-		return "timestamptz", nil
-	default:
-		return "", fmt.Errorf("invalid data type: %s", t)
-	}
+type Type struct {
+	T      string
+	IsEnum bool
 }
 
 const (
-	DataTypeInteger = "integer"
-	DataTypeBigint  = "bigint"
-	DataTypeVarchar = "varchar"
-	DataTypeBool    = "bool"
-	DataTypeTime    = "time"
-	DataTypeSerial  = "serial"
+	DataTypeInteger     = "integer"
+	DataTypeBigint      = "bigint"
+	DataTypeVarchar     = "varchar"
+	DataTypeBool        = "bool"
+	DataTypeTime        = "time"
+	DataTypeTimestamptz = "timestamptz"
+	DataTypeSerial      = "serial"
 )
