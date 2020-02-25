@@ -232,12 +232,18 @@ func (p *parser) parseField(in interface{}) (*Field, error) {
 		case "default":
 			switch f.Type.T {
 			case DataTypeVarchar, DataTypeInteger, DataTypeBigint, DataTypeBool, DataTypeDouble:
+				f.Default = item.Value
+			case DataTypeTimestamptz:
+				if val := item.Value.(string); val != "now" {
+					return nil, fmt.Errorf("%s: invalid default value '%s'", f.Name, val)
+				}
+				f.Default = "current_timestamp"
 			default:
 				if !f.Type.IsEnum {
 					return nil, fmt.Errorf("%s: data type '%s' can not have 'default' attribute", f.Name, f.Type.T)
 				}
 			}
-			f.Default = item.Value
+
 		case "size":
 			switch f.Type.T {
 			case DataTypeVarchar:
@@ -372,6 +378,8 @@ func render(data *Metadata, w io.Writer) error {
 				switch f.Type.T {
 				case DataTypeVarchar:
 					g.Pf(" default '%s'", f.Default.(string))
+				case DataTypeTimestamptz:
+					g.Pf(" default %s", f.Default.(string))
 				case DataTypeInteger, DataTypeBigint:
 					g.Pf(" default %d", f.Default.(int))
 				case DataTypeBool:
