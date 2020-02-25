@@ -231,7 +231,7 @@ func (p *parser) parseField(in interface{}) (*Field, error) {
 		switch key := item.Key.(string); key {
 		case "default":
 			switch f.Type.T {
-			case DataTypeVarchar, DataTypeInteger, DataTypeBigint, DataTypeBool:
+			case DataTypeVarchar, DataTypeInteger, DataTypeBigint, DataTypeBool, DataTypeDouble:
 			default:
 				if !f.Type.IsEnum {
 					return nil, fmt.Errorf("%s: data type '%s' can not have 'default' attribute", f.Name, f.Type.T)
@@ -292,6 +292,8 @@ func (p *parser) parseDataType(t string) (*Type, error) {
 		return &Type{T: DataTypeTime}, nil
 	case "tsz":
 		return &Type{T: DataTypeTimestamptz}, nil
+	case "double":
+		return &Type{T: DataTypeDouble}, nil
 	case "text", "serial":
 		return &Type{T: t}, nil
 	default:
@@ -490,4 +492,5 @@ const (
 	DataTypeTime        = "time"
 	DataTypeTimestamptz = "timestamptz"
 	DataTypeSerial      = "serial"
+	DataTypeDouble      = "float8"
 )
