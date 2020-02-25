@@ -410,12 +410,12 @@ func render(data *Metadata, w io.Writer) error {
 		// indexes
 		for _, index := range t.Uniques {
 			// todo check if column exists
-			g.Pf("create unique index %s_idx on %s (%s);", strings.Join(index, "_"), t.Name, strings.Join(index, ", ")).Ln()
+			g.Pf("create unique index %s_%s_key on %s (%s);", t.Name, strings.Join(index, "_"), t.Name, strings.Join(index, ", ")).Ln()
 		}
 
 		for _, index := range t.Indexes {
 			// todo check if column exists
-			g.Pf("create index %s_idx on %s (%s);", strings.Join(index, "_"), t.Name, strings.Join(index, ", ")).Ln()
+			g.Pf("create index %s_%s_idx on %s (%s);", t.Name, strings.Join(index, "_"), t.Name, strings.Join(index, ", ")).Ln()
 		}
 
 		// comments
