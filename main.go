@@ -231,7 +231,8 @@ func (p *parser) parseField(in interface{}) (*Field, error) {
 		switch key := item.Key.(string); key {
 		case "default":
 			switch f.Type.T {
-			case DataTypeVarchar, DataTypeInteger, DataTypeBigint, DataTypeBool, DataTypeDouble:
+			case DataTypeVarchar, DataTypeInteger, DataTypeBigint, DataTypeBool,
+				DataTypeDouble, DataTypeText:
 				f.Default = item.Value
 			case DataTypeTimestamptz:
 				if val := item.Value.(string); val != "now" {
@@ -501,4 +502,5 @@ const (
 	DataTypeTimestamptz = "timestamptz"
 	DataTypeSerial      = "serial"
 	DataTypeDouble      = "float8"
+	DataTypeText        = "text"
 )
