@@ -11,5 +11,4 @@ A lightweight PostgreSQL generator. It reads YAML definition file, outputs DDL.
 # Naming stype
 
 # TODO
-- 检查索引字段存不存在
 - 校验命名规范

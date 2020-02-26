@@ -184,9 +184,17 @@ func (p *parser) parseTable(s yaml.MapItem) (*Table, error) {
 				t.Fields = append(t.Fields, f)
 			}
 		case "uniques":
-			t.Uniques = p.parseIndexes(attr.Value)
+			uniques, err := p.parseIndexes(t.Fields, attr.Value)
+			if err != nil {
+				return nil, errors.New("uniques: " + err.Error())
+			}
+			t.Uniques = uniques
 		case "indexes":
-			t.Indexes = p.parseIndexes(attr.Value)
+			indexes, err := p.parseIndexes(t.Fields, attr.Value)
+			if err != nil {
+				return nil, errors.New("indexes: " + err.Error())
+			}
+			t.Uniques = indexes
 		}
 	}
 
@@ -198,20 +206,29 @@ func (p *parser) parseTable(s yaml.MapItem) (*Table, error) {
 	return &t, nil
 }
 
-func (p *parser) parseIndexes(in interface{}) []Index {
+func (p *parser) parseIndexes(fields []*Field, in interface{}) ([]Index, error) {
 	if in == nil {
-		return nil
+		return nil, nil
+	}
+
+	m := map[string]struct{}{}
+	for _, f := range fields {
+		m[f.Name] = struct{}{}
 	}
 
 	var indexes []Index
 	for _, val := range in.([]interface{}) {
 		var index Index
 		for _, idx := range val.([]interface{}) {
-			index = append(index, idx.(string))
+			col := idx.(string)
+			if _, ok := m[col]; !ok { // field not exists
+				return nil, fmt.Errorf("field %s not found", col)
+			}
+			index = append(index, col)
 		}
 		indexes = append(indexes, index)
 	}
-	return indexes
+	return indexes, nil
 }
 
 func (p *parser) parseField(in interface{}) (*Field, error) {
