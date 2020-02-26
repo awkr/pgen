@@ -301,7 +301,7 @@ func (p *parser) parseDataType(t string) (*Type, error) {
 		return &Type{T: DataTypeTimestamptz}, nil
 	case "double":
 		return &Type{T: DataTypeDouble}, nil
-	case "text", "serial":
+	case "text", "serial", "jsonb":
 		return &Type{T: t}, nil
 	default:
 		for _, e := range p.Data.Enums {
