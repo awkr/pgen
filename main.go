@@ -394,7 +394,7 @@ func render(data *Metadata, w io.Writer) error {
 			// default
 			if f.Default != nil {
 				switch f.Type.T {
-				case DataTypeVarchar:
+				case DataTypeVarchar, DataTypeText:
 					g.Pf(" default '%s'", f.Default.(string))
 				case DataTypeTimestamptz:
 					g.Pf(" default %s", f.Default.(string))
