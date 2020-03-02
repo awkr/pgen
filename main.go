@@ -260,6 +260,7 @@ func (p *parser) parseField(in interface{}) (*Field, error) {
 				if !f.Type.IsEnum {
 					return nil, fmt.Errorf("%s: data type '%s' can not have 'default' attribute", f.Name, f.Type.T)
 				}
+				f.Default = item.Value.(string)
 			}
 
 		case "size":
