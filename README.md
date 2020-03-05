@@ -8,7 +8,7 @@ A lightweight PostgreSQL generator. It reads YAML definition file, outputs DDL.
 
 # How to use
 
-# Naming stype
+# Naming convention
 
 # TODO
 - 校验命名规范
